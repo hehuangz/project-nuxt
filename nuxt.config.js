@@ -28,17 +28,27 @@ export default {
   // Modules for dev and build (recommended) (https://go.nuxtjs.dev/config-modules)
   buildModules: [
     // https://go.nuxtjs.dev/eslint
-    '@nuxtjs/eslint-module',
+    // '@nuxtjs/eslint-module',
     // https://go.nuxtjs.dev/stylelint
-    '@nuxtjs/stylelint-module'
+    // '@nuxtjs/stylelint-module'
   ],
 
   // Modules (https://go.nuxtjs.dev/config-modules)
   modules: [
+    "@nuxtjs/proxy"
   ],
 
   // Build Configuration (https://go.nuxtjs.dev/config-build)
   build: {
     transpile: [/^element-ui/]
+  },
+  proxy: {
+    "/api" : {
+      target: 'http://localhost:7002/',
+      secure: false,
+      pathRewrite: {
+        '^/api' : ''
+      }
+    }
   }
 }
