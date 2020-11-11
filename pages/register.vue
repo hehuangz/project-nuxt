@@ -91,7 +91,7 @@ export default {
     },
     handleRegister () {
       this.$refs.registerForm.validate( async valid=>{
-        if(valid){
+        if (valid) {
           // @todo 发送注册请求
           let obj = {
             email: this.form.email,
@@ -105,7 +105,7 @@ export default {
           if (ret.code === 0){
             this.$alert('注册成功','成功',{
               confirmButtonText: "去登录",
-              callback: ()=>{
+              callback: () => {
                 this.$router.push("/login")
               }
             })
