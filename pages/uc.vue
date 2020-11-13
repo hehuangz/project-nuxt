@@ -1,26 +1,46 @@
 <template>
   <div>
-      <h1>用户中心</h1>
-      <i class="el-icon-loading"></i>
-      <div ref='drag' id="drag">
-        <input type="file" name="file" @change="handleChange">
+    <h1>用户中心</h1>
+    <i class="el-icon-loading"></i>
+    <div ref='drag' id="drag">
+      <input type="file" name="file" @change="handleChange">
+    </div>
+    <div>
+      <el-progress
+        :stroke-width='20'
+        :text-inside='true'
+        :percentage='uploadProgress'
+      />
+    </div>
+    <div>
+      <p>切片进度</p>
+      <el-progress
+        :stroke-width='20'
+        :text-inside='true'
+        :percentage='hashProgress'
+      />
+    </div>
+    <el-button type="primary" @click="uploadFile">上传</el-button>
+
+    <!-- 显示每个切片的上传进度，progress < 0 报错，红色；100 成功 绿色；0<n<100 上传中 蓝色 -->
+    <div class="cube-container" :style="{width: cubeWidth + 'px'}">
+      <div class="cube" v-for="chunk in chunks" :key="chunk.name">
+        <div
+          :class="{
+            'uploading': chunk.progress > 0 && chunk.progress < 100,
+            'error': chunk.progress < 0,
+            'success': chunk.progress === 100
+          }"
+          :style="{height: chunk.grogress + '100%'}">
+          <i
+            v-if="chunk.progress > 0 && chunk.progress < 100"
+            class="el-icon-loading"
+            style="color: #f56c6c"
+          />
+        </div>
       </div>
-      <div>
-        <el-progress
-          :stroke-width='20'
-          :text-inside='true'
-          :percentage='uploadProgress'
-        />
-      </div>
-      <div>
-        <p>切片进度</p>
-        <el-progress
-          :stroke-width='20'
-          :text-inside='true'
-          :percentage='hashProgress'
-        />
-      </div>
-      <el-button type="primary" @click="uploadFile">上传</el-button>
+
+    </div>
   </div>
 </template>
 
@@ -30,6 +50,20 @@
   line-height 100px
   border 2px dashed #eee
   text-align center
+.cube-container
+  .cube
+    width 14px
+    height 14px
+    line-height 12px
+    border  1px black solid
+    background #eee
+    float  left
+    >.success
+      background green
+    >.uploading
+      background blue
+    >.error
+      background red
 </style>
 
 <script>
@@ -40,7 +74,13 @@ export default {
     return {
       file: null,
       uploadProgress: 0,
-      hashProgress: 0
+      hashProgress: 0,
+      chunks: []
+    }
+  },
+  computed: {
+    cubeWidth () {
+      return Math.ceil(Math.sqrt(this.chunks.length)) * 16
     }
   },
   async mounted () {
@@ -135,7 +175,6 @@ export default {
           }
           cur += offset
         }
-        console.log(chunks, 22)
         reader.readAsArrayBuffer(new Blob(chunks))
         reader.onload = e => {
           spark.append(e.target.result)
@@ -160,21 +199,49 @@ export default {
       // const hash = await this.calculateHashWorker()
       // 方法二：
       // const hash2 = await this.calculateHashIdle()
-      const hash3 = await this.calculateHashSample()
-      return
-
-      // 转成formData格式上传文件
-      const form = new FormData()
-      form.append('name', 'file')
-      form.append('file', this.file)
-      const ret = await this.$http.post('/uploadFile', form, {
-        onUploadProgress: progress => {
-          this.uploadProgress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+      // const hash3 = await this.calculateHashSample()
+      const hash = await this.calculateHashSample()
+      this.hash = hash
+      this.chunks = this.chunks.map((chunk, index) => {
+        const name = `${hash}-${index}`
+        return {
+          hash,
+          name,
+          index,
+          chunk: chunk.file,
+          progress: 0
         }
       })
-      if (ret.code === 0) {
-        this.$message.success('上传成功')
-      }
+      // await this.uploadChunks()
+    },
+    uploadChunks () {
+      // 转成formData格式上传文件
+      // 切片依次上传方式
+      const request = this.chunks.map((chunk, index) => {
+        console.log(chunk, index)
+        const form = new Form()
+        form.append('hash', chunk.hash)
+        form.append('chunk', chunk.chunk)
+        form.append('name', chunk.name)
+        return {form, index: chunk.index, error: 0}
+      }).map(({form, index}) => this.$http.post('/uploadFile', form, {
+          onUploadProgress: progress => {
+            this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+          }
+        })
+      )
+      // 整个文件一次性上传方式
+      // const form = new FormData()
+      // form.append('name', 'file')
+      // form.append('file', this.file)
+      // const ret = await this.$http.post('/uploadFile', form, {
+      //   onUploadProgress: progress => {
+      //     this.uploadProgress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+      //   }
+      // })
+      // if (ret.code === 0) {
+      //   this.$message.success('上传成功')
+      // }
     },
     bindEvent () {
       const drag = this.$refs.drag
