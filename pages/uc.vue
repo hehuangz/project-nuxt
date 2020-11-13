@@ -12,6 +12,14 @@
           :percentage='uploadProgress'
         />
       </div>
+      <div>
+        <p>切片进度</p>
+        <el-progress
+          :stroke-width='20'
+          :text-inside='true'
+          :percentage='hashProgress'
+        />
+      </div>
       <el-button type="primary" @click="uploadFile">上传</el-button>
   </div>
 </template>
@@ -25,11 +33,13 @@
 </style>
 
 <script>
+const CHUNK_SIZE = 0.5 * 1024 * 1024 // 单个切片大小0.5M
 export default {
   data () {
     return {
       file: null,
-      uploadProgress: 0
+      uploadProgress: 0,
+      hashProgress: 0
     }
   },
   async mounted () {
@@ -42,12 +52,43 @@ export default {
       if (!file) return
       this.file = file
     },
+    // 将大文件变成n个小文件，塞进数组里
+    createFileChunk (file, size = CHUNK_SIZE) {
+      let cur = 0
+      let chunks = []
+      while(cur < this.file.size) {
+        chunks.push({index: cur, file: this.file.slice(cur, cur + size)})
+        cur+=size
+      }
+      return chunks
+    },
+    async calculateHashWorker (chunks) {
+      return new Promise(resolve => {
+        this.worker = new Worker('/hash.js')
+        this.worker.postMessage({chunks: this.chunks})
+        this.worker.onmessage = e => {
+          const { progress, hash } = e.data
+          this.hashProgress = Number(progress.toFixed(2))
+          if (hash) {
+            resolve(hash)
+          }
+         }
+      })
+    },
     async uploadFile () {
       if (!this.file) return
-      if (!await this.isImage(this.file)) {
-        this.$message.error('文件格式不对')
-        return
-      }
+
+      // 文件上传，不校验图片格式
+      // if (!await this.isImage(this.file)) {
+      //   this.$message.error('文件格式不对')
+      //   return
+      // }
+
+      // 得到切片后的文件流数组
+      this.chunks = this.createFileChunk(this.file)
+      // 计算hash值
+      const hash = await this.calculateHashWorker()
+      return
       // 转成formData格式上传文件
       const form = new FormData()
       form.append('name', 'file')
@@ -101,7 +142,6 @@ export default {
       // 前面6个16进制，'47 49 46 38 39 61' '47 49 46 38 37 61'
       // 16进制的抓安环
       const ret = await this.blobToString(file.slice(0,6))
-      console.log(ret, 'gif')
       const isgif = (ret=='474946383961') || (ret=='474946383761')
       return isgif
     },
