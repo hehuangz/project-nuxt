@@ -114,6 +114,36 @@ export default {
         window.requestIdleCallback(workLoop)
       })
     },
+    async calculateHashSample () {
+      return new Promise(resolve => {
+        const spark = new sparkMD5.ArrayBuffer()
+        const reader = new FileReader()
+        const file = this.file
+        const size = file.size
+        const offset = 2 * 1024 * 1024
+        let chunks = [file.slice(0, offset)]
+        let cur = offset
+        while(cur < size) {
+          if (cur + offset >= size) {
+            chunks.push(file.slice(cur, cur + offset))
+          } else {
+            const mid = cur + offset / 2
+            const end = cur + offset
+            chunks.push(file.slice(cur, cur + 2))
+            chunks.push(file.slice(mid, mid + 2))
+            chunks.push(file.slice(end - 2, end))
+          }
+          cur += offset
+        }
+        console.log(chunks, 22)
+        reader.readAsArrayBuffer(new Blob(chunks))
+        reader.onload = e => {
+          spark.append(e.target.result)
+          this.hasProgress = 100
+          resolve(spark.end())
+        }
+      })
+    },
     async uploadFile () {
       if (!this.file) return
 
@@ -129,7 +159,8 @@ export default {
       // 方法一：
       // const hash = await this.calculateHashWorker()
       // 方法二：
-      const hash2 = await this.calculateHashIdle()
+      // const hash2 = await this.calculateHashIdle()
+      const hash3 = await this.calculateHashSample()
       return
 
       // 转成formData格式上传文件
