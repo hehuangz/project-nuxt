@@ -33,7 +33,8 @@
 </style>
 
 <script>
-const CHUNK_SIZE = 0.5 * 1024 * 1024 // 单个切片大小0.5M
+import sparkMD5 from 'spark-md5'
+const CHUNK_SIZE = 0.1 * 1024 * 1024 // 单个切片大小0.5M
 export default {
   data () {
     return {
@@ -75,6 +76,44 @@ export default {
          }
       })
     },
+    async calculateHashIdle () {
+      const chunks = this.chunks
+      return new Promise(resolve => {
+        const spark = new sparkMD5.ArrayBuffer()
+        let count = 0
+        const appendToSpark = async file => {
+          return new Promise(resolve2 => {
+            const reader = new FileReader()
+            reader.readAsArrayBuffer(file)
+            reader.onload = e => {
+              spark.append(e.target.result)
+              resolve2()
+            }
+          })
+        }
+
+        const workLoop = async deadline => {
+          // timeRemaining 获取当前帧的空余时间
+          while(count < chunks.length && deadline.timeRemaining() > 1 ){
+            // 空闲时间且有任务
+            await appendToSpark(chunks[count].file)
+            count++
+            if (count < chunks.length) {
+              this.hashProgress = Number(
+                ((100 * count) / chunks.length).toFixed(2)
+              )
+            } else {
+              this.hashProgress = 100
+              resolve(spark.end())
+            }
+          }
+          window.requestIdleCallback(workLoop)
+        }
+
+        // 浏览器一旦空闲，就会调用workLoop
+        window.requestIdleCallback(workLoop)
+      })
+    },
     async uploadFile () {
       if (!this.file) return
 
@@ -86,9 +125,13 @@ export default {
 
       // 得到切片后的文件流数组
       this.chunks = this.createFileChunk(this.file)
-      // 计算hash值
-      const hash = await this.calculateHashWorker()
+      // 计算hash值,文件大会卡，解决办法一：webWorker，方法二，利用空闲时间计算
+      // 方法一：
+      // const hash = await this.calculateHashWorker()
+      // 方法二：
+      const hash2 = await this.calculateHashIdle()
       return
+
       // 转成formData格式上传文件
       const form = new FormData()
       form.append('name', 'file')
