@@ -31,7 +31,7 @@
             'error': chunk.progress < 0,
             'success': chunk.progress === 100
           }"
-          :style="{height: chunk.grogress + '100%'}">
+          :style="{height: chunk.progress + '%'}">
           <i
             v-if="chunk.progress > 0 && chunk.progress < 100"
             class="el-icon-loading"
@@ -39,7 +39,6 @@
           />
         </div>
       </div>
-
     </div>
   </div>
 </template>
@@ -68,7 +67,7 @@
 
 <script>
 import sparkMD5 from 'spark-md5'
-const CHUNK_SIZE = 0.1 * 1024 * 1024 // 单个切片大小0.5M
+const CHUNK_SIZE = 2 * 1024 * 1024 // 单个切片大小
 export default {
   data () {
     return {
@@ -212,24 +211,26 @@ export default {
           progress: 0
         }
       })
-      // await this.uploadChunks()
+      await this.uploadChunks()
     },
-    uploadChunks () {
+    async uploadChunks () {
       // 转成formData格式上传文件
       // 切片依次上传方式
-      const request = this.chunks.map((chunk, index) => {
-        console.log(chunk, index)
-        const form = new Form()
+      const requests = this.chunks.map((chunk, index) => {
+        const form = new FormData()
         form.append('hash', chunk.hash)
         form.append('chunk', chunk.chunk)
         form.append('name', chunk.name)
-        return {form, index: chunk.index, error: 0}
-      }).map(({form, index}) => this.$http.post('/uploadFile', form, {
+        form.append('name', chunk.name)
+        return form
+      }).map((form, index) => this.$http.post('/uploadFile', form, {
           onUploadProgress: progress => {
             this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
           }
         })
       )
+      await Promise.all(requests)
+      await this.mergeRequest()
       // 整个文件一次性上传方式
       // const form = new FormData()
       // form.append('name', 'file')
@@ -242,6 +243,14 @@ export default {
       // if (ret.code === 0) {
       //   this.$message.success('上传成功')
       // }
+    },
+    async mergeRequest () {
+      const ret = await this.$http.post('/mergeFile', {
+        ext: this.file.name.split('.').pop(),
+        size: CHUNK_SIZE,
+        hash: this.hash
+      })
+      console.log(ret, 'success')
     },
     bindEvent () {
       const drag = this.$refs.drag
