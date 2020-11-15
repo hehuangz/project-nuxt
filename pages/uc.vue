@@ -206,7 +206,8 @@ export default {
       /**
        * 先校验是否文件已经上传，已经上传则显示妙传成功，没有则校验 chunks 哪些已经上传
        */
-      await this.checkFile()
+      const isExit = await this.checkFile()
+      if (isExit) return
 
       this.chunks = this.chunks.map((chunk, index) => {
         const name = `${hash}-${index}`
@@ -228,15 +229,15 @@ export default {
       })
       if (uploaded) {
         this.$message.success('秒传成功')
+        return true
       } else {
         this.uploadedList = uploadedList
+        return false
       }
-      console.log(this.uploadedList, 'uploadedList')
     },
     async uploadChunks () {
       // 转成formData格式上传文件
       // 切片依次上传方式
-      console.log(this.chunks, 11)
       const requests = this.chunks
         .filter(chunk => this.uploadedList.indexOf(chunk.name) === -1)
         .map((chunk, index) => {
@@ -246,13 +247,7 @@ export default {
           form.append('name', chunk.name)
           return {form, index:chunk.index,error:0}
         })
-        .map(({form, index}) => this.$http.post('/uploadFile', form, {
-          onUploadProgress: progress => {
-            this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
-          }
-        })
-      )
-      await Promise.all(requests)
+      await this.sendRequest(requests)
       await this.mergeRequest()
 
       // 整个文件一次性上传方式
@@ -267,6 +262,46 @@ export default {
       // if (ret.code === 0) {
       //   this.$message.success('上传成功')
       // }
+    },
+    async sendRequest (requests, limit = 4) {
+      return new Promise((resolve, reject) => {
+        let isStop = false
+        let count = 0, len = requests.length
+        const start = async () => {
+          if ( isStop ) return
+          const task = requests.shift()
+          if ( !task ) return
+          const { form, index } = task
+          try {
+            await this.$http.post('/uploadFile', form, {
+              onUploadProgress: progress => {
+                this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+              }
+            })
+            if (count == len - 1) {
+              resolve()
+            } else {
+              count++
+              start()
+            }
+          } catch (e) {
+            this.chunks[index].progress = -1
+            if (tack.error < 3) {
+              task.error++
+              requests.unshift(task)
+              start()
+            } else {
+              isStop = true
+              reject()
+            }
+          }
+        }
+
+        while(limit > 0) {
+          start()
+          limit-=1
+        }
+      })
     },
     async mergeRequest () {
       const ret = await this.$http.post('/mergeFile', {
