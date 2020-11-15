@@ -2,7 +2,7 @@ import Vue from 'vue'
 import axios from 'axios'
 import { MessageBox } from 'element-ui'
 let service = axios.create({
-  timeout: 5000,
+  timeout: 50000,
   // 前缀
   baseURL: '/api'
 })

@@ -67,14 +67,15 @@
 
 <script>
 import sparkMD5 from 'spark-md5'
-const CHUNK_SIZE = 2 * 1024 * 1024 // 单个切片大小
+const CHUNK_SIZE = 0.4 * 1024 * 1024 // 单个切片大小
 export default {
   data () {
     return {
       file: null,
       uploadProgress: 0,
       hashProgress: 0,
-      chunks: []
+      chunks: [],
+      uploadedList: []
     }
   },
   computed: {
@@ -83,7 +84,7 @@ export default {
     }
   },
   async mounted () {
-    const ret = await this.$http.get('/user/info')
+    // const ret = await this.$http.get('/user/info')
     this.bindEvent()
   },
   methods: {
@@ -192,6 +193,7 @@ export default {
       // }
 
       // 得到切片后的文件流数组
+      this.uploadedList = []
       this.chunks = this.createFileChunk(this.file)
       // 计算hash值,文件大会卡，解决办法一：webWorker，方法二，利用空闲时间计算
       // 方法一：
@@ -201,6 +203,11 @@ export default {
       // const hash3 = await this.calculateHashSample()
       const hash = await this.calculateHashSample()
       this.hash = hash
+      /**
+       * 先校验是否文件已经上传，已经上传则显示妙传成功，没有则校验 chunks 哪些已经上传
+       */
+      await this.checkFile()
+
       this.chunks = this.chunks.map((chunk, index) => {
         const name = `${hash}-${index}`
         return {
@@ -208,22 +215,38 @@ export default {
           name,
           index,
           chunk: chunk.file,
-          progress: 0
+          progress: this.uploadedList.indexOf(name) > -1 ? 100 : 0
         }
       })
+
       await this.uploadChunks()
+    },
+    async checkFile () {
+      const {data: {uploaded, uploadedList}} = await this.$http.post('/checkFile', {
+        hash: this.hash,
+        ext: this.file.name.split('.').pop()
+      })
+      if (uploaded) {
+        this.$message.success('秒传成功')
+      } else {
+        this.uploadedList = uploadedList
+      }
+      console.log(this.uploadedList, 'uploadedList')
     },
     async uploadChunks () {
       // 转成formData格式上传文件
       // 切片依次上传方式
-      const requests = this.chunks.map((chunk, index) => {
-        const form = new FormData()
-        form.append('hash', chunk.hash)
-        form.append('chunk', chunk.chunk)
-        form.append('name', chunk.name)
-        form.append('name', chunk.name)
-        return form
-      }).map((form, index) => this.$http.post('/uploadFile', form, {
+      console.log(this.chunks, 11)
+      const requests = this.chunks
+        .filter(chunk => this.uploadedList.indexOf(chunk.name) === -1)
+        .map((chunk, index) => {
+          const form = new FormData()
+          form.append('hash', chunk.hash)
+          form.append('chunk', chunk.chunk)
+          form.append('name', chunk.name)
+          return {form, index:chunk.index,error:0}
+        })
+        .map(({form, index}) => this.$http.post('/uploadFile', form, {
           onUploadProgress: progress => {
             this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
           }
@@ -231,6 +254,7 @@ export default {
       )
       await Promise.all(requests)
       await this.mergeRequest()
+
       // 整个文件一次性上传方式
       // const form = new FormData()
       // form.append('name', 'file')
